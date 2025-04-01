@@ -133,14 +133,14 @@ def benchmark_clfs():
 
     classifiers = [
         ('LinearSVC', svm.LinearSVC()),
-        ('LogisticReg', LogisticRegression()),
+        ('LogisticReg', LogisticRegression(class_weight='balanced', max_iter=1000)),
         ('SGD', SGDClassifier()),
         ('MultinomialNB', naive_bayes.MultinomialNB()),
         ('KNN', KNeighborsClassifier()),
         ('DecisionTree', DecisionTreeClassifier()),
         ('RandomForest', RandomForestClassifier()),
-        ('AdaBoost', AdaBoostClassifier(base_estimator=LogisticRegression()))
-    ]
+        ('AdaBoost', AdaBoostClassifier(algorithm='SAMME'))
+        ]
 
     cols = ['metrics', 'accuracy',  'pos_precision', 'pos_recall', 'pos_f1_score', 'neg_precision', 'neg_recall', 'neg_f1_score']
     scores = []

@@ -34,7 +34,7 @@ quotes.set_index('date', inplace=True)
 sentiment_idx.index = pd.to_datetime(sentiment_idx.index)
 merged = pd.merge(sentiment_idx, quotes, how='left', left_index=True, right_index=True)
 
-merged.fillna(method='ffill', inplace=True)
+merged.bfill(inplace=True)
 merged['BI_MA'] = merged['BI'].rolling(window=10, center=False).mean()
 merged['BI_Simple_MA'] = merged['BI_Simple'].rolling(window=10, center=False).mean()
 
