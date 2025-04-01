@@ -1,7 +1,7 @@
 import subprocess
 
 # List of scripts to run
-scripts = ["model_ml.py", "compute_sent_idx.py", "plot_set-inde.py"]
+scripts = ["model_ml.py", "compute_sent_idx.py", "plot_sent-inde.py"]
 
 for script in scripts:
     try:
