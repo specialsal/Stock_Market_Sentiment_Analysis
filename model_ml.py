@@ -198,6 +198,4 @@ if __name__ == '__main__':
     scores = benchmark_clfs()
     print(scores)
     scores.to_csv('model_ml_scores.csv', float_format='%.4f')
-
-
     eval_model()

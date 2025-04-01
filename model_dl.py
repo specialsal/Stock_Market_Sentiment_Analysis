@@ -3,6 +3,7 @@ import gc
 import pickle
 import numpy as np
 import pandas as pd
+import tensorflow
 from pprint import pprint
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix, f1_score, precision_score, recall_score
@@ -11,15 +12,16 @@ from sklearn.linear_model import SGDClassifier
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.pipeline import make_pipeline
 from sklearn.model_selection import cross_val_score
-from keras.preprocessing.text import Tokenizer
-from keras.preprocessing.sequence import pad_sequences
-from keras.layers import Embedding, Dense, Activation, Input
-from keras.layers import Convolution1D, Flatten, Dropout, MaxPool1D
-from keras.layers import LSTM, GRU, TimeDistributed, Bidirectional
-from keras.layers import BatchNormalization
-from keras.layers.merge import concatenate
-from keras.models import Model, Sequential
-from keras.callbacks import Callback, EarlyStopping, ModelCheckpoint
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.layers import Embedding, Dense, Activation, Input
+from tensorflow.keras.layers import Convolution1D, Flatten, Dropout, MaxPool1D
+from tensorflow.keras.layers import LSTM, GRU, TimeDistributed, Bidirectional
+from tensorflow.keras.layers import BatchNormalization
+from tensorflow.keras.layers import concatenate
+from tensorflow.keras.models import Model, Sequential
+from tensorflow.keras.callbacks import Callback, EarlyStopping, ModelCheckpoint
+from tensorflow.keras.layers import Input, LSTM, Dense, concatenate
 
 np.random.seed(42)
 
@@ -82,7 +84,7 @@ word_embedding = True
 
 if word_embedding:
     print('Embedding...')
-    EMBEDDING_FILE = 'x:/E/CodeBases/AI/NLP/Corpus/word2vec/sgns.baidubaike.bigram-char'
+    EMBEDDING_FILE = './data/sgns.baidubaike.bigram-char'
     embed_size = 300
 
     def get_coefs(word, *arr): return word, np.asarray(arr, dtype='float32')
@@ -133,6 +135,7 @@ def train_model_MLP():
     early_stopping = EarlyStopping(monitor='val_loss', patience=5)
     model_checkpoint = ModelCheckpoint('./model-MLP.h5', save_best_only=True)
     metrics = Metrics()
+    metrics.validation_data(x_test, y_test)
     hist = model.fit(x_train, y_train,
               batch_size=128,
               epochs=40,
@@ -167,6 +170,7 @@ def train_model_LSTM():
     early_stopping = EarlyStopping(monitor='val_loss', patience=5)
     model_checkpoint = ModelCheckpoint('model-LSTM.h5', save_best_only=True)
     metrics = Metrics()
+    metrics.validation_data(X_test_padded_seqs, y_test)
     hist = model.fit(X_train_padded_seqs, y_train,
               batch_size=128,
               epochs=100,
@@ -211,12 +215,12 @@ def train_model_TextCNN():
     early_stopping = EarlyStopping(monitor='val_loss', patience=5)
     model_checkpoint = ModelCheckpoint('model-TextCNN.h5', save_best_only=True)
     metrics = Metrics()
-
+    metrics.validation_data(X_test_padded_seqs, y_test)
     hist = model.fit(X_train_padded_seqs, y_train,
               batch_size=128,
               epochs=20,
               validation_data=(X_test_padded_seqs, y_test),
-              callbacks=[early_stopping, metrics, model_checkpoint])
+              callbacks=[metrics, early_stopping, model_checkpoint])
 
     best_acc = max(hist.history['val_acc'])
     idx = np.argmax(hist.history['val_acc'])
