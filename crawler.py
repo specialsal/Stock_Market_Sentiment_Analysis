@@ -11,12 +11,14 @@ import asyncio
 import csv
 from urllib.parse import urljoin, urlparse
 import aiofiles
+from datetime import datetime
+import akshare as ak
 
 # 深度爬虫示例代码
 
 
 class AsyncPlaywrightCrawler:
-    def __init__(self, start_url, max_concurrency=3, max_pages=5):
+    def __init__(self, start_url, max_concurrency=15, max_pages=10000):
         self.start_url = start_url
         self.max_concurrency = max_concurrency
         self.max_pages = max_pages
@@ -25,7 +27,7 @@ class AsyncPlaywrightCrawler:
         self.queue.put_nowait(start_url)
         self.data = []
         self.domain = urlparse(start_url).netloc
-        self.gnextpage = 1  # Initialize Gnextpage as an instance variable
+        self.gnextpage = 81  # Initialize Gnextpage as an instance variable
         self.lock = asyncio.Lock()  # Create a lock for safe updates
 
 
@@ -72,8 +74,20 @@ class AsyncPlaywrightCrawler:
                 #rint(cell_text)
                  # Create a dictionary with appropriate keys
                 cell_texts = cell_text.split("\n\t\n")
+
+
+                raw_time = cell_texts[-1]  # 假设时间在最后一列
+                try:
+                    # 补充年份信息并解析时间
+                    current_year = datetime.now().year
+                    parsed_time = datetime.strptime(f"{current_year}-{raw_time}", "%Y-%m-%d %H:%M")
+                    formatted_time = parsed_time.strftime("%Y-%m-%d %H:%M:%S")  # 转换为标准格式
+                except ValueError as e:
+                    print(f"Failed to parse time: {raw_time}, error: {e}")
+                    formatted_time = None
+
                 row_data = {
-                    "created_time": cell_texts[-1],  # Replace "column_1" with a meaningful key
+                    "created_time": formatted_time,  # Replace "column_1" with a meaningful key
                     "title": cell_texts[2]   # Replace "column_2" with a meaningful key
                 }
                 # print(row_data)
@@ -109,8 +123,8 @@ class AsyncPlaywrightCrawler:
             )
 
            
-            while True:
-                try:
+            try:
+                while True:
                     # 从队列中获取 URL
                     if self.queue.empty():
                         break
@@ -123,64 +137,60 @@ class AsyncPlaywrightCrawler:
                     self.visited.add(self.current_url)
 
                     page = await context.new_page()
-                    # 设置页面大小  
-                    await page.set_viewport_size({"width": 1280, "height": 800})
-                    # 设置请求头
-                    await page.set_extra_http_headers({
-                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ...",
-                            "Accept-Language": "zh-CN,zh;q=0.9",
-                            "Accept-Encoding": "gzip, deflate, br",
-                            "Connection": "keep-alive"
-                    })
-                    print('page',page)
-                    await self.queue.put(self.current_url)  # 重新放回队列以处理动态更新
-                    # 等待页面加载完成
-                    await self.fetch_page(page)
-                    # 等待一段时间以模拟人类行为
-                    await asyncio.sleep(random.uniform(1, 3))
-
                     try:
-                        close_btn = page.locator(".ad-close")
-                        if await close_btn.is_visible():
-                            await close_btn.click()
-                    except Exception as e:
-                        print(f"关闭弹窗失败: {e}")
+                        # 设置页面大小  
+                        await page.set_viewport_size({"width": 1280, "height": 800})
+                        # 设置请求头
+                        await page.set_extra_http_headers({
+                                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ...",
+                                "Accept-Language": "zh-CN,zh;q=0.9",
+                                "Accept-Encoding": "gzip, deflate, br",
+                                "Connection": "keep-alive"
+                        })
+                        print('page',page)
+                        await self.queue.put(self.current_url)  # 重新放回队列以处理动态更新
+                        # 等待页面加载完成
+                        await self.fetch_page(page)
+                        # 等待一段时间以模拟人类行为
+                        await asyncio.sleep(random.uniform(1, 3))
 
-                    # 处理页面数据
-                    data = await self.extract_data(page)
-                    if data:
-                        print(f"[*] Extracted data from {self.current_url}")
-                        # 处理数据（例如保存到文件或数据库）
-                        # 这里我们简单地打印出来
-                        # print(data)
-                        # 将数据添加到列表中
-                        self.data.append(data)
+                        # 处理页面数据
+                        data = await self.extract_data(page)
+                        if data:
+                            print(f"[*] Extracted data from {self.current_url}")
+                            # 处理数据（例如保存到文件或数据库）
+                            # 这里我们简单地打印出来
+                            # print(data)
+                            # 将数据添加到列表中
+                            self.data.append(data)
 
-                    '''
-                    # 提取链接并加入队列所有遍历暂时不用保留
-                    links = await self.extract_links(page)
-                    for link in links:
-                        if link not in self.visited:
-                            await self.queue.put(link)
-                    '''
-                    # Safely update Gnextpage and generate the next link
-                    async with self.lock:
-                        if len(self.visited) < self.max_pages:  # 确保不超过最大页数
-                            self.gnextpage += 1
-                            next_link = f"https://guba.eastmoney.com/list,zssh000001_{self.gnextpage}.html"
-                            print(f"[*] Next page link: {next_link}")
-                            if next_link not in self.visited:
-                                await self.queue.put(next_link)
-                                print(f"[*] The next website is {next_link}")
+                        '''
+                        # 提取链接并加入队列所有遍历暂时不用保留
+                        links = await self.extract_links(page)
+                        for link in links:
+                            if link not in self.visited:
+                                await self.queue.put(link)
+                        '''
+                        # Safely update Gnextpage and generate the next link
+                        async with self.lock:
+                            if len(self.visited) < self.max_pages:  # 确保不超过最大页数
+                                self.gnextpage += 1
+                                next_link = f"https://guba.eastmoney.com/list,zssh000001_{self.gnextpage}.html"
+                                print(f"[*] Next page link: {next_link}")
+                                if next_link not in self.visited:
+                                    await self.queue.put(next_link)
+                                    print(f"[*] The next website is {next_link}")
+                    finally:
+                        await page.close() 
 
                     self.queue.task_done()
-                    await page.close()   
 
-                except Exception as e:
-                    print(f"Failed to process {self.current_url}: {e}")
-                    self.queue.task_done()
-               
-            await browser.close()
+            except Exception as e:
+                print(f"Failed to process {self.current_url}: {e}")
+                self.queue.task_done()
+            finally:  
+                await context.close()    
+                await browser.close()
   
 
     async def run(self):
@@ -189,11 +199,13 @@ class AsyncPlaywrightCrawler:
             asyncio.create_task(self.worker())
             for _ in range(self.max_concurrency)
         ]
-        # 等待队列处理完成
-        await self.queue.join()
+        try:
+            await self.queue.join()  # 等待队列处理完成
+        finally:
+            for w in workers:
+                w.cancel()  # 取消所有任务
+            await asyncio.gather(*workers, return_exceptions=True)  # 等待所有任务完成
 
-        for w in workers:
-            w.cancel()
         
         '''
         print(f"[*] Crawling finished. Total pages visited: {len(self.visited)}")
@@ -222,11 +234,19 @@ class AsyncPlaywrightCrawler:
 #Run the crawler
 if __name__ == "__main__":
 
+        # 获取上证综指（sh00001）的日线数据
+    df = ak.stock_zh_a_hist(symbol="000001", period="daily", start_date="20250101", end_date="20250401")
+    # 打印数据
+    print(df)
+    df.to_csv("./data/sh000001.csv", index=False)
+
     # 1. 设置起始 URL
     start_url = "https://guba.eastmoney.com/list,zssh000001.html"
     
     # 2. 创建异步爬虫实例
-    crawler = AsyncPlaywrightCrawler(start_url, max_concurrency=3)
+    crawler = AsyncPlaywrightCrawler(start_url, max_concurrency=15)
     
     # 3. 启动爬虫
     asyncio.run(crawler.run())
+
+
