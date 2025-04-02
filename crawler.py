@@ -204,7 +204,7 @@ class AsyncPlaywrightCrawler:
         '''
 
         # 保存数据到 CSV
-        async with aiofiles.open("output.csv", "w", newline="", encoding="utf-8") as f:
+        async with aiofiles.open("./data/stock_comments_seg.csv", "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=["created_time", "title"])
             await writer.writeheader()
              # 打印数据
@@ -213,11 +213,6 @@ class AsyncPlaywrightCrawler:
                 for row in item:
                     if isinstance(row, dict):
                         await writer.writerow(row)
-
-        # 可选：转换为 DataFrame 保存
-        df = pd.DataFrame(self.data)
-        df.to_csv("output_backup.csv", index=False)
-
 
     def save_to_csv(self, filename):
         df = pd.DataFrame(self.data)
