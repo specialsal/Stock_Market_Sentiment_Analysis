@@ -28,8 +28,8 @@ BI_index = grouped.apply(BI_func)
 
 sentiment_idx = pd.concat([BI_index.rename('BI'), BI_Simple_index.rename('BI_Simple')], axis=1)
 
-quotes = pd.read_csv('./data/sh000001.csv', parse_dates=['日期'])
-quotes.set_index('日期', inplace=True)
+quotes = pd.read_csv('./data/sh000001.csv', parse_dates=['date'])
+quotes.set_index('date', inplace=True)
 
 sentiment_idx.index = pd.to_datetime(sentiment_idx.index)
 merged = pd.merge(sentiment_idx, quotes, how='left', left_index=True, right_index=True)

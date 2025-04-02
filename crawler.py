@@ -230,15 +230,20 @@ class AsyncPlaywrightCrawler:
         df = pd.DataFrame(self.data)
         df.to_csv(filename, index=False)
 
-
+def getSH1Daily():
+        # 获取上证综指（sh00001）的日线数据
+    df = ak.stock_zh_a_hist(symbol="000001", period="daily", start_date="20250101", end_date="20250401")
+    df.drop(['股票代码','成交额','振幅','涨跌幅','涨跌额','换手率'], axis=1, inplace=True)
+    new_columns = ['date','open','high','low','close','volume']
+    df.columns = new_columns
+    print(df)
+    df.to_csv("./data/sh000001.csv", index=False)
+    
 #Run the crawler
 if __name__ == "__main__":
 
-        # 获取上证综指（sh00001）的日线数据
-    df = ak.stock_zh_a_hist(symbol="000001", period="daily", start_date="20250101", end_date="20250401")
-    # 打印数据
-    print(df)
-    df.to_csv("./data/sh000001.csv", index=False)
+
+    getSH1Daily()
 
     # 1. 设置起始 URL
     start_url = "https://guba.eastmoney.com/list,zssh000001.html"
@@ -248,5 +253,6 @@ if __name__ == "__main__":
     
     # 3. 启动爬虫
     asyncio.run(crawler.run())
+
 
 

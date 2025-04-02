@@ -6,7 +6,7 @@ mpl.rcParams['axes.unicode_minus'] = False
 
 df = pd.read_csv('merged_sentiment_idx.csv', parse_dates=['created_time'])
 df.set_index(df.created_time, inplace=True)
-df = df.loc['2017-4-15':'2018-4-15']
+df = df.loc['2025-01-01':'2025-04-01']
 
 fig, ax1 = plt.subplots()
 
