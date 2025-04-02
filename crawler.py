@@ -27,7 +27,7 @@ class AsyncPlaywrightCrawler:
         self.queue.put_nowait(start_url)
         self.data = []
         self.domain = urlparse(start_url).netloc
-        self.gnextpage = 81  # Initialize Gnextpage as an instance variable
+        self.gnextpage = 100  # Initialize Gnextpage as an instance variable
         self.lock = asyncio.Lock()  # Create a lock for safe updates
 
 
@@ -174,7 +174,7 @@ class AsyncPlaywrightCrawler:
                         # Safely update Gnextpage and generate the next link
                         async with self.lock:
                             if len(self.visited) < self.max_pages:  # 确保不超过最大页数
-                                self.gnextpage += 1
+                                self.gnextpage += 10
                                 next_link = f"https://guba.eastmoney.com/list,zssh000001_{self.gnextpage}.html"
                                 print(f"[*] Next page link: {next_link}")
                                 if next_link not in self.visited:
@@ -232,18 +232,19 @@ class AsyncPlaywrightCrawler:
 
 def getSH1Daily():
         # 获取上证综指（sh00001）的日线数据
-    df = ak.stock_zh_a_hist(symbol="000001", period="daily", start_date="20250101", end_date="20250401")
+    df = ak.stock_zh_a_hist(symbol="000001", period="daily", start_date="20160101", end_date="20250401")
     df.drop(['股票代码','成交额','振幅','涨跌幅','涨跌额','换手率'], axis=1, inplace=True)
     new_columns = ['date','open','high','low','close','volume']
     df.columns = new_columns
     print(df)
     df.to_csv("./data/sh000001.csv", index=False)
-    
+
 #Run the crawler
 if __name__ == "__main__":
 
 
-    getSH1Daily()
+    #getSH1Daily()
+
 
     # 1. 设置起始 URL
     start_url = "https://guba.eastmoney.com/list,zssh000001.html"
