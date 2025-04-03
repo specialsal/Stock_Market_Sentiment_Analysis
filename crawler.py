@@ -1,5 +1,5 @@
 from playwright.async_api import async_playwright
-import requests
+import os
 import time 
 import random
 from bs4 import BeautifulSoup
@@ -27,7 +27,8 @@ class AsyncPlaywrightCrawler:
         self.queue.put_nowait(start_url)
         self.data = []
         self.domain = urlparse(start_url).netloc
-        self.gnextpage = 100  # Initialize Gnextpage as an instance variable
+        self.gnextpage = 1400  # Initialize Gnextpage as an instance variable
+        self.intelvar = 100
         self.lock = asyncio.Lock()  # Create a lock for safe updates
         self.buffer = []  # 添加缓冲区
         self.buffer_size = 100  # 设置缓冲区大小
@@ -40,7 +41,7 @@ class AsyncPlaywrightCrawler:
 
     async def fetch_page(self, page):
         try:
-            await page.goto(self.current_url, timeout=30_000)
+            await page.goto(self.current_url, timeout=10_000)
             return page
         except Exception as e:
             print(f"Error loading {self.current_url}: {e}")
@@ -153,7 +154,7 @@ class AsyncPlaywrightCrawler:
                         await self.fetch_page(page)
                         # 等待一段时间以模拟人类行为
                         await asyncio.sleep(random.uniform(1, 3))
-
+                        data=[]
                         # 处理页面数据
                         data = await self.extract_data(page)
                         if data:
@@ -161,6 +162,8 @@ class AsyncPlaywrightCrawler:
                             self.buffer.extend(data)
                             if len(self.buffer) >= self.buffer_size:
                                 await self.save_to_csv()
+                                #await self.buffer.clear()
+
 
                         '''
                         # 提取链接并加入队列所有遍历暂时不用保留
@@ -172,7 +175,7 @@ class AsyncPlaywrightCrawler:
                         # Safely update Gnextpage and generate the next link
                         async with self.lock:
                             if len(self.visited) < self.max_pages:  # 确保不超过最大页数
-                                self.gnextpage += 10
+                                self.gnextpage += self.intelvar
                                 next_link = f"https://guba.eastmoney.com/list,zssh000001_{self.gnextpage}.html"
                                 print(f"[*] Next page link: {next_link}")
                                 if next_link not in self.visited:
@@ -237,6 +240,10 @@ class AsyncPlaywrightCrawler:
 
     async def save_to_csv(self, filename="./data/stock_comments_seg.csv"):
         try:
+            # 检查文件是否存在
+            file_exists = os.path.exists(filename)
+
+
             # 使用异步上下文管理器打开文件
             async with aiofiles.open(
                 filename,
@@ -244,16 +251,19 @@ class AsyncPlaywrightCrawler:
                 newline="",
                 encoding="utf-8"
             ) as f:
-                # 写入缓冲区数据
-                if self.buffer:
+                if not file_exists:
+                    print(f"文件bucunzai:")
                     writer = csv.DictWriter(f, fieldnames=["created_time", "title"])
-                    if await f.tell() == 0:  # 如果文件为空，写入表头
-                        await f.write(",".join(writer.fieldnames) + "\n")
+                    await f.write(",".join(writer.fieldnames) + "\n")
+                 # 写入缓冲区数据
+                writer = csv.DictWriter(f, fieldnames=["created_time", "title"])
+                if self.buffer:
                     for row in self.buffer:
                         await f.write(",".join([str(row[field]) for field in writer.fieldnames]) + "\n")
                     self.buffer.clear()  # 清空缓冲区
         except Exception as e:
             print(f"文件保存失败: {str(e)}")
+            self.buffer.clear()  # 清空缓冲区
             # 可在此处添加重试逻辑或错误上报
 
 def getSH1Daily():
