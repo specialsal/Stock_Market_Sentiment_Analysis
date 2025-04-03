@@ -29,6 +29,8 @@ class AsyncPlaywrightCrawler:
         self.domain = urlparse(start_url).netloc
         self.gnextpage = 100  # Initialize Gnextpage as an instance variable
         self.lock = asyncio.Lock()  # Create a lock for safe updates
+        self.buffer = []  # 添加缓冲区
+        self.buffer_size = 100  # 设置缓冲区大小
 
 
     def is_valid_url(self, url):
@@ -69,30 +71,27 @@ class AsyncPlaywrightCrawler:
         for row in rows:
             cells = await row.locator("tr.listitem").all()
             for  cell in cells:
-                # 获取每个单元格的文本内容
-                cell_text = await cell.inner_text()
-                #rint(cell_text)
-                 # Create a dictionary with appropriate keys
-                cell_texts = cell_text.split("\n\t\n")
-
-
-                raw_time = cell_texts[-1]  # 假设时间在最后一列
                 try:
+                    # 获取每个单元格的文本内容
+                    cell_text = await cell.inner_text()
+                    #rint(cell_text)
+                    # Create a dictionary with appropriate keys
+                    cell_texts = cell_text.split("\n\t\n")
+                    raw_time = cell_texts[-1]  # 假设时间在最后一列
                     # 补充年份信息并解析时间
                     current_year = datetime.now().year
                     parsed_time = datetime.strptime(f"{current_year}-{raw_time}", "%Y-%m-%d %H:%M")
                     formatted_time = parsed_time.strftime("%Y-%m-%d %H:%M:%S")  # 转换为标准格式
+                    row_data = {
+                        "created_time": formatted_time,  # Replace "column_1" with a meaningful key
+                        "title": cell_texts[2]   # Replace "column_2" with a meaningful key
+                    }
+                    # print(row_data)
+                    data.append(row_data)
+                    # 将每一行数据存储为字典'
                 except ValueError as e:
-                    print(f"Failed to parse time: {raw_time}, error: {e}")
-                    formatted_time = None
-
-                row_data = {
-                    "created_time": formatted_time,  # Replace "column_1" with a meaningful key
-                    "title": cell_texts[2]   # Replace "column_2" with a meaningful key
-                }
-                # print(row_data)
-                data.append(row_data)
-                # 将每一行数据存储为字典'
+                    print(f"Failed to clear data , error: {e} ")
+                    continue
         return data
 
        
@@ -113,15 +112,16 @@ class AsyncPlaywrightCrawler:
         # 创建异步任务池
         async with async_playwright() as p:
             browser = await p.chromium.launch(
-                headless=False,  # 设置为 False 以查看浏览器操作
-                slow_mo=50,  # 设置慢速操作以便观察 
+                headless=True,  # 设置为 False 以查看浏览器操作
+                #slow_mo=50,  # 设置慢速操作以便观察 
                 args=["--no-sandbox", "--disable-dev-shm-usage", "--autoplay-policy=no-user-gesture-required",
                 "--disable-notifications", "--disable-popup-blocking", "--disable-infobars"]
             )
             context = await browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) ..."
             )
-
+            # 禁用图片和样式表加载
+            await context.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "stylesheet"] else route.continue_())
            
             try:
                 while True:
@@ -158,11 +158,9 @@ class AsyncPlaywrightCrawler:
                         data = await self.extract_data(page)
                         if data:
                             print(f"[*] Extracted data from {self.current_url}")
-                            # 处理数据（例如保存到文件或数据库）
-                            # 这里我们简单地打印出来
-                            # print(data)
-                            # 将数据添加到列表中
-                            self.data.append(data)
+                            self.buffer.extend(data)
+                            if len(self.buffer) >= self.buffer_size:
+                                await self.save_to_csv()
 
                         '''
                         # 提取链接并加入队列所有遍历暂时不用保留
@@ -180,6 +178,11 @@ class AsyncPlaywrightCrawler:
                                 if next_link not in self.visited:
                                     await self.queue.put(next_link)
                                     print(f"[*] The next website is {next_link}")
+                    except Exception as e:
+                        print(f"While trueFailed to process {self.current_url}: {e}")
+                        await page.close()
+                        self.queue.task_done()
+                        continue
                     finally:
                         await page.close() 
 
@@ -188,6 +191,7 @@ class AsyncPlaywrightCrawler:
             except Exception as e:
                 print(f"Failed to process {self.current_url}: {e}")
                 self.queue.task_done()
+
             finally:  
                 await context.close()    
                 await browser.close()
@@ -213,7 +217,7 @@ class AsyncPlaywrightCrawler:
         # 打印数据
         for i, item in enumerate(self.data):
             print(f"[*] Data {i + 1}: {item}")
-        '''
+        
 
         # 保存数据到 CSV
         async with aiofiles.open("./data/stock_comments_seg.csv", "w", newline="", encoding="utf-8") as f:
@@ -224,11 +228,33 @@ class AsyncPlaywrightCrawler:
                 #print(f"[*] Data {i + 1}: {item}")
                 for row in item:
                     if isinstance(row, dict):
-                        await writer.writerow(row)
+                        await writer.writerow(row)'
+        '''
 
-    def save_to_csv(self, filename):
+    def save_to_csv11(self, filename):
         df = pd.DataFrame(self.data)
         df.to_csv(filename, index=False)
+
+    async def save_to_csv(self, filename="./data/stock_comments_seg.csv"):
+        try:
+            # 使用异步上下文管理器打开文件
+            async with aiofiles.open(
+                filename,
+                mode="a",  # 改为追加模式，保留历史数据
+                newline="",
+                encoding="utf-8"
+            ) as f:
+                # 写入缓冲区数据
+                if self.buffer:
+                    writer = csv.DictWriter(f, fieldnames=["created_time", "title"])
+                    if await f.tell() == 0:  # 如果文件为空，写入表头
+                        await f.write(",".join(writer.fieldnames) + "\n")
+                    for row in self.buffer:
+                        await f.write(",".join([str(row[field]) for field in writer.fieldnames]) + "\n")
+                    self.buffer.clear()  # 清空缓冲区
+        except Exception as e:
+            print(f"文件保存失败: {str(e)}")
+            # 可在此处添加重试逻辑或错误上报
 
 def getSH1Daily():
         # 获取上证综指（sh00001）的日线数据
