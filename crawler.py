@@ -13,12 +13,15 @@ from urllib.parse import urljoin, urlparse
 import aiofiles
 from datetime import datetime
 import akshare as ak
-
+import jieba
+import re
 # 深度爬虫示例代码
 
 
 class AsyncPlaywrightCrawler:
     def __init__(self, start_url, max_concurrency=15, max_pages=10000):
+        self.gnextpage = 3800  # Initialize Gnextpage as an instance variable
+        start_url = f"https://guba.eastmoney.com/list,zssh000001_{self.gnextpage}.html"
         self.start_url = start_url
         self.max_concurrency = max_concurrency
         self.max_pages = max_pages
@@ -27,8 +30,7 @@ class AsyncPlaywrightCrawler:
         self.queue.put_nowait(start_url)
         self.data = []
         self.domain = urlparse(start_url).netloc
-        self.gnextpage = 1400  # Initialize Gnextpage as an instance variable
-        self.intelvar = 100
+        self.intelvar = 5
         self.lock = asyncio.Lock()  # Create a lock for safe updates
         self.buffer = []  # 添加缓冲区
         self.buffer_size = 100  # 设置缓冲区大小
@@ -69,6 +71,7 @@ class AsyncPlaywrightCrawler:
         # print(header_map)
         # 遍历并打印数据
         
+        #清理数据
         for row in rows:
             cells = await row.locator("tr.listitem").all()
             for  cell in cells:
@@ -83,9 +86,14 @@ class AsyncPlaywrightCrawler:
                     current_year = datetime.now().year
                     parsed_time = datetime.strptime(f"{current_year}-{raw_time}", "%Y-%m-%d %H:%M")
                     formatted_time = parsed_time.strftime("%Y-%m-%d %H:%M:%S")  # 转换为标准格式
+                    # 执行分词
+                    cell_texts[2] = re.sub(r'[^\u4e00-\u9fff\w\s]', '', cell_texts[2])
+                    words = jieba.cut(cell_texts[2])
+                    # 过滤空白词并拼接
+                    extractwolds = ' '.join([word.strip() for word in words if word.strip()])
                     row_data = {
                         "created_time": formatted_time,  # Replace "column_1" with a meaningful key
-                        "title": cell_texts[2]   # Replace "column_2" with a meaningful key
+                        "title": extractwolds   # Replace "column_2" with a meaningful key
                     }
                     # print(row_data)
                     data.append(row_data)
@@ -95,8 +103,12 @@ class AsyncPlaywrightCrawler:
                     continue
         return data
 
-       
-        
+    async def extract_wolds(text):
+        # 使用正则表达式提取中文字符和常用标点符号
+        # 执行分词
+        words = jieba.cut(text)
+        # 过滤空白词并拼接
+        return ' '.join([word.strip() for word in words if word.strip()])
 
 
     async def extract_links(self, page):
@@ -143,7 +155,7 @@ class AsyncPlaywrightCrawler:
                         await page.set_viewport_size({"width": 1280, "height": 800})
                         # 设置请求头
                         await page.set_extra_http_headers({
-                                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ...",
+                                "User-Agent": "Chrome/135.0.7049.42",
                                 "Accept-Language": "zh-CN,zh;q=0.9",
                                 "Accept-Encoding": "gzip, deflate, br",
                                 "Connection": "keep-alive"
@@ -153,7 +165,7 @@ class AsyncPlaywrightCrawler:
                         # 等待页面加载完成
                         await self.fetch_page(page)
                         # 等待一段时间以模拟人类行为
-                        await asyncio.sleep(random.uniform(1, 3))
+                        await asyncio.sleep(random.uniform(1, 13))
                         data=[]
                         # 处理页面数据
                         data = await self.extract_data(page)
@@ -175,8 +187,12 @@ class AsyncPlaywrightCrawler:
                         # Safely update Gnextpage and generate the next link
                         async with self.lock:
                             if len(self.visited) < self.max_pages:  # 确保不超过最大页数
-                                self.gnextpage += self.intelvar
-                                next_link = f"https://guba.eastmoney.com/list,zssh000001_{self.gnextpage}.html"
+                                self.intelvar = random.randint(1, 10)
+                                self.gnextpage -= self.intelvar
+                                next_link= f"https://guba.eastmoney.com/list,zssh000001_{self.gnextpage}.html"
+                                if self.gnextpage < 0:
+                                    self.gnextpage = 0
+                                    next_link = f"https://guba.eastmoney.com/list,zssh000001.html"
                                 print(f"[*] Next page link: {next_link}")
                                 if next_link not in self.visited:
                                     await self.queue.put(next_link)
@@ -268,7 +284,7 @@ class AsyncPlaywrightCrawler:
 
 def getSH1Daily():
         # 获取上证综指（sh00001）的日线数据
-    df = ak.stock_zh_a_hist(symbol="000001", period="daily", start_date="20160101", end_date="20250401")
+    df = ak.stock_zh_a_hist(symbol="000001", period="daily", start_date="20250101", end_date="20250401")
     df.drop(['股票代码','成交额','振幅','涨跌幅','涨跌额','换手率'], axis=1, inplace=True)
     new_columns = ['date','open','high','low','close','volume']
     df.columns = new_columns
@@ -279,6 +295,7 @@ def getSH1Daily():
 if __name__ == "__main__":
 
 
+    # 0. 获取上证综指（sh00001）的日线数据 可选
     #getSH1Daily()
 
 
