@@ -15,12 +15,13 @@ from datetime import datetime
 import akshare as ak
 import jieba
 import re
+import requests
 # 深度爬虫示例代码
 
 
 class AsyncPlaywrightCrawler:
     def __init__(self, start_url, max_concurrency=15, max_pages=10000):
-        self.gnextpage = 3800  # Initialize Gnextpage as an instance variable
+        self.gnextpage = 3980  # Initialize Gnextpage as an instance variable
         start_url = f"https://guba.eastmoney.com/list,zssh000001_{self.gnextpage}.html"
         self.start_url = start_url
         self.max_concurrency = max_concurrency
@@ -41,67 +42,185 @@ class AsyncPlaywrightCrawler:
         return parsed.netloc == self.domain and parsed.scheme in ('http', 'https')
     
 
-    async def fetch_page(self, page):
+    async def fetch_page(self, page,headers):
         try:
-            await page.goto(self.current_url, timeout=10_000)
-            return page
+            try:
+                session = requests.Session()
+                session.headers.update(headers)
+                resp = session.get(self.current_url, timeout=500)
+                resp.raise_for_status()  # 检查请求是否成功
+                #print(resp.text)
+                if resp.status_code != 200:
+                    print(f"Failed to fetch {self.current_url}: {resp.status_code}")
+                    input("Press Enter to continue...")
+                soup = BeautifulSoup(resp.text, 'html.parser')
+        
+                # 查找 default_list 表格
+                table = soup.find('table', class_='default_list')
+                if not table:
+                    print("Table not found in response")
+                    return None
+                    
+                data = []
+                try:
+                    # 获取表头
+                    headers = []
+                    thead = table.find('thead', class_='listhead')
+                    if thead:
+                        headers = [th.get_text(strip=True) for th in thead.find_all('th')]
+
+                    # 获取表格数据
+                    tbody = table.find('tbody', class_='listbody')
+                    if tbody:
+                        rows = tbody.find_all('tr', class_='listitem')
+                        for row in rows:
+                            try:
+                                # 获取行数据
+                                cells = [cell.get_text(strip=True) for cell in row.find_all('td')]
+                                
+                                if cells:
+                                    # 处理时间（假设在最后一列）
+                                    raw_time = cells[-1]
+                                    try:
+                                        current_year = datetime.now().year
+                                        parsed_time = datetime.strptime(f"{current_year}-{raw_time}", "%Y-%m-%d %H:%M")
+                                        formatted_time = parsed_time.strftime("%Y-%m-%d %H:%M:%S")
+                                    except ValueError as e:
+                                        print(f"Error parsing time {raw_time}: {e}")
+                                        formatted_time = raw_time
+
+                                    # 处理标题（假设在第3列）
+                                    title_text = cells[2] if len(cells) > 2 else ""
+                                    cleaned_title = re.sub(r'[^\u4e00-\u9fff\w\s]', '', title_text)
+                                    words = jieba.cut(cleaned_title)
+                                    extracted_words = ' '.join([word.strip() for word in words if word.strip()])
+
+                                    # 构建数据字典
+                                    row_data = {
+                                        "created_time": formatted_time,
+                                        "title": extracted_words,
+                                        "raw_title": title_text,
+                                        "full_data": cells
+                                    }
+                                    
+                                    if headers:
+                                        # 如果有表头，添加对应的键值对
+                                        row_data.update(dict(zip(headers, cells)))
+                                    
+                                    data.append(row_data)
+                                    
+                            except Exception as e:
+                                print(f"Error processing row: {e}")
+                                continue
+
+                        print(f"Successfully processed {len(data)} rows")
+                    else:
+                        print("No table body found")
+
+                except Exception as e:
+                    print(f"Error processing table: {e}")
+                    return None
+
+                return data
+
+            except requests.exceptions.RequestException as e:
+                print(f"Request error: {e}")
+                return None
+            except Exception as e:
+                print(f"Unexpected error: {e}")
+                return None
+            except requests.exceptions.RequestException as e:
+                print(f"请求错误: {e}")
         except Exception as e:
             print(f"Error loading {self.current_url}: {e}")
             return None
 
     async def extract_data(self, page):
-        data = []
-        # 获取 ul 元素的文本内容
-        table = page.locator("table.default_list")
-        if not table:
-            print("Table not found")
-            return None
-        
+        try:
+            data = []
+            # 1. 等待表格加载并获取表格元素
+            try:
+                table = await page.wait_for_selector("table.default_list", timeout=5000)
+                if not table:
+                    print("Table not found")
+                    return None
+            except Exception as e:
+                print(f"Error finding table: {e}")
+                return None
 
-        # 等待表格加载完成
-        await table.wait_for(state="visible", timeout=10_000)
-        
-        # 获取表头和表体
-        headers = await table.locator("thead.listhead").all()
-        rows = await table.locator("tbody.listbody").all()
-         # 构建表头映射
-        header_map = [await header.inner_text() for header in headers]
-        # clearprint(header_map)
-        header_map = header_map[0].split("\n\t\n")
-        # print(header_map)
-        # 遍历并打印数据
-        
-        #清理数据
-        for row in rows:
-            cells = await row.locator("tr.listitem").all()
-            for  cell in cells:
-                try:
-                    # 获取每个单元格的文本内容
-                    cell_text = await cell.inner_text()
-                    #rint(cell_text)
-                    # Create a dictionary with appropriate keys
-                    cell_texts = cell_text.split("\n\t\n")
-                    raw_time = cell_texts[-1]  # 假设时间在最后一列
-                    # 补充年份信息并解析时间
-                    current_year = datetime.now().year
-                    parsed_time = datetime.strptime(f"{current_year}-{raw_time}", "%Y-%m-%d %H:%M")
-                    formatted_time = parsed_time.strftime("%Y-%m-%d %H:%M:%S")  # 转换为标准格式
-                    # 执行分词
-                    cell_texts[2] = re.sub(r'[^\u4e00-\u9fff\w\s]', '', cell_texts[2])
-                    words = jieba.cut(cell_texts[2])
-                    # 过滤空白词并拼接
-                    extractwolds = ' '.join([word.strip() for word in words if word.strip()])
-                    row_data = {
-                        "created_time": formatted_time,  # Replace "column_1" with a meaningful key
-                        "title": extractwolds   # Replace "column_2" with a meaningful key
-                    }
-                    # print(row_data)
-                    data.append(row_data)
-                    # 将每一行数据存储为字典'
-                except ValueError as e:
-                    print(f"Failed to clear data , error: {e} ")
-                    continue
-        return data
+            # 2. 获取表头
+            try:
+                thead = await table.query_selector("thead.listhead")
+                if thead:
+                    header_text = await thead.inner_text()
+                    headers = [h.strip() for h in header_text.split("\n\t\n") if h.strip()]
+                    print(f"Headers found: {headers}")
+                else:
+                    print("No headers found")
+                    headers = []
+            except Exception as e:
+                print(f"Error processing headers: {e}")
+                headers = []
+
+            # 3. 获取所有数据行
+            try:
+                rows = await table.query_selector_all("tbody.listbody tr.listitem")
+                if not rows:
+                    print("No data rows found")
+                    return None
+
+                # 4. 处理每一行数据
+                for row in rows:
+                    try:
+                        # 获取行文本
+                        row_text = await row.inner_text()
+                        cells = [cell.strip() for cell in row_text.split("\n\t\n") if cell.strip()]
+                        
+                        # 处理时间
+                        raw_time = cells[-1]  # 假设时间在最后一列
+                        try:
+                            current_year = datetime.now().year
+                            parsed_time = datetime.strptime(f"{current_year}-{raw_time}", "%Y-%m-%d %H:%M")
+                            formatted_time = parsed_time.strftime("%Y-%m-%d %H:%M:%S")
+                        except ValueError as e:
+                            print(f"Error parsing time {raw_time}: {e}")
+                            formatted_time = raw_time
+
+                        # 处理标题文本（第3列，索引2）
+                        if len(cells) > 2:
+                            title_text = cells[2]
+                            # 清理标题文本
+                            cleaned_title = re.sub(r'[^\u4e00-\u9fff\w\s]', '', title_text)
+                            # 分词处理
+                            words = jieba.cut(cleaned_title)
+                            extracted_words = ' '.join([word.strip() for word in words if word.strip()])
+                        else:
+                            extracted_words = ""
+
+                        # 构建数据字典
+                        row_data = {
+                            "created_time": formatted_time,
+                            "title": extracted_words
+                            #"raw_title": title_text if len(cells) > 2 else "",  # 保存原始标题
+                            #"full_data": cells  # 保存完整数据
+                        }
+                        
+                        data.append(row_data)
+                        
+                    except Exception as e:
+                        print(f"Error processing row: {e}")
+                        continue
+
+                print(f"Successfully processed {len(data)} rows")
+                return data
+
+            except Exception as e:
+                print(f"Error processing table body: {e}")
+                return None
+
+        except Exception as e:
+            print(f"Unexpected error in extract_data: {e}")
+            return None
 
     async def extract_wolds(text):
         # 使用正则表达式提取中文字符和常用标点符号
@@ -131,7 +250,7 @@ class AsyncPlaywrightCrawler:
                 "--disable-notifications", "--disable-popup-blocking", "--disable-infobars"]
             )
             context = await browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) ..."
+                user_agent='User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'
             )
             # 禁用图片和样式表加载
             await context.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "stylesheet"] else route.continue_())
@@ -150,32 +269,41 @@ class AsyncPlaywrightCrawler:
                     self.visited.add(self.current_url)
 
                     page = await context.new_page()
+                    headers = {
+                                'User-Agent': 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36',
+                                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                                'Accept-Encoding': 'gzip, deflate, br, zstd',
+                                'Accept-Language': 'zh-CN,zh;q=0.9',
+                                'Cache-Control': 'max-age=0',
+                                'Connection': 'keep-alive',
+                                'Cookie': 'qgqp_b_id=f67ccf209c2668010ce0820c6c9f2270; HAList=ty-1-000001-%u4E0A%u8BC1%u6307%u6570%2Cty-0-000722-%u6E56%u5357%u53D1%u5C55; fullscreengg=1; fullscreengg2=1; st_si=09540399922141; st_asi=delete; st_pvi=08238370541624; st_sp=2025-04-03%2013%3A52%3A05; st_inirUrl=https%3A%2F%2Fguba.eastmoney.com%2Fnews%2Cof008515%2C1535755240.html; st_sn=4; st_psi=2025041714474175-117001356556-7311554884',
+                                'Host': 'guba.eastmoney.com',
+                                'Sec-Fetch-Dest': 'document',
+                                'Sec-Fetch-Mode': 'navigate',
+                                'Sec-Fetch-Site': 'none',
+                                'Sec-Fetch-User': '?1'
+                    }
+
                     try:
                         # 设置页面大小  
                         await page.set_viewport_size({"width": 1280, "height": 800})
                         # 设置请求头
-                        await page.set_extra_http_headers({
-                                "User-Agent": "Chrome/135.0.7049.42",
-                                "Accept-Language": "zh-CN,zh;q=0.9",
-                                "Accept-Encoding": "gzip, deflate, br",
-                                "Connection": "keep-alive"
-                        })
-                        print('page',page)
+                        await page.set_extra_http_headers(headers)
+                       
                         await self.queue.put(self.current_url)  # 重新放回队列以处理动态更新
                         # 等待页面加载完成
-                        await self.fetch_page(page)
+                        data=[]
+                        data =  await self.fetch_page(page,headers)
                         # 等待一段时间以模拟人类行为
                         await asyncio.sleep(random.uniform(1, 13))
-                        data=[]
-                        # 处理页面数据
-                        data = await self.extract_data(page)
+
                         if data:
                             print(f"[*] Extracted data from {self.current_url}")
                             self.buffer.extend(data)
                             if len(self.buffer) >= self.buffer_size:
                                 await self.save_to_csv()
                                 #await self.buffer.clear()
-
+                        print('save_to_csv')
 
                         '''
                         # 提取链接并加入队列所有遍历暂时不用保留
@@ -198,7 +326,7 @@ class AsyncPlaywrightCrawler:
                                     await self.queue.put(next_link)
                                     print(f"[*] The next website is {next_link}")
                     except Exception as e:
-                        print(f"While trueFailed to process {self.current_url}: {e}")
+                        print(f"While true Failed to process {self.current_url}: {e}")
                         await page.close()
                         self.queue.task_done()
                         continue
